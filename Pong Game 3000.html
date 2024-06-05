@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Seb's Pong Game 3000</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='16'>🕹️</text></svg>">
+    <style>
+        @keyframes blink {
+            0% { opacity: 1; }
+            50% { opacity: 0; }
+            100% { opacity: 1; }
+        }
+        body {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, #6a11cb, #2575fc);
+            color: #fff;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            border: 2px solid #fff;
+            background-color: #000;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #444;
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            border-radius: 12px;
+        }
+        button:hover {
+            background-color: #888;
+        }
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            margin-top: 10px;
+        }
+        .toggle-label {
+            margin-right: 10px;
+            font-weight: bold;
+        }
+        .toggle {
+            display: flex;
+            gap: 10px;
+        }
+        .toggle input {
+            display: none;
+        }
+        .toggle label {
+            padding: 10px 20px;
+            background-color: #444;
+            color: #fff;
+            cursor: pointer;
+            border-radius: 12px;
+            font-weight: bold;
+        }
+        .toggle input:checked + label {
+            background-color: #888;
+        }
+        .welcome-text, .congrats-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            font-weight: bold;
+        }
+        .welcome-text {
+            font-size: 24px;
+            font-weight: bold;
+            animation: blink 1s infinite;
+        }
+        .sub-text {
+            font-size: 16px;
+            margin-top: 10px;
+        }
+
+        @media (max-width: 600px) {
+            canvas {
+                width: 100%;
+                height: auto;
+            }
+            .welcome-text {
+                font-size: 18px;
+            }
+            .sub-text {
+                font-size: 14px;
+            }
+            button {
+                padding: 8px 16px;
+                font-size: 14px;
+            }
+            .toggle-container {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .toggle-label {
+                margin-bottom: 5px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="welcome-text">
+        Welcome to Pong Game 3000! 🕹️
+        <div class="sub-text">Best of 3 wins</div>
+    </div>
+    <div class="congrats-text" style="display: none;"></div>
+    <canvas id="pongCanvas" width="800" height="400"></canvas>
+    <div class="controls">
+        <button id="startButton">Start</button>
+        <button id="pauseButton">Pause</button>
+        <button id="resetButton">Reset</button>
+    </div>
+    <div class="toggle-container">
+        <div class="toggle-label">Game Mode:</div>
+        <div class="toggle">
+            <input type="radio" id="bestOf3" name="gameMode" value="3" checked>
+            <label for="bestOf3">Best of 3</label>
+            <input type="radio" id="bestOf5" name="gameMode" value="5">
+            <label for="bestOf5">Best of 5</label>
+        </div>
+    </div>
+    <script>
+        const canvas = document.getElementById('pongCanvas');
+        const context = canvas.getContext('2d');
+        const startButton = document.getElementById('startButton');
+        const pauseButton = document.getElementById('pauseButton');
+        const resetButton = document.getElementById('resetButton');
+        const welcomeText = document.querySelector('.welcome-text');
+        const congratsText = document.querySelector('.congrats-text');
+        const bestOf3 = document.getElementById('bestOf3');
+        const bestOf5 = document.getElementById('bestOf5');
+
+        const paddleWidth = 10;
+        const paddleHeight = 100;
+        const ballSize = 12; // Increased ball size
+        const initialBallSpeed = 4;
+        let winningScore = 3;
+        let animationFrameId;
+        let gamePaused = true;
+
+        let playerPaddle = { x: 0, y: canvas.height / 2 - paddleHeight / 2 };
+        let computerPaddle = { x: canvas.width - paddleWidth, y: canvas.height / 2 - paddleHeight / 2 };
+        let ball = { x: canvas.width / 2, y: canvas.height / 2, vx: initialBallSpeed, vy: initialBallSpeed };
+
+        let playerScore = 0;
+        let computerScore = 0;
+
+        const pingSound = new Audio('data:audio/midi;base64,TVRoZAAAAAYAAQABAeBNVHJrAAAAGwD/AwAAAP8HAgAAAAeP+/7//y8ATVRyawAAARwA/v//UgD/AwAAAP8fAQAAAfwKAP8AAAD/BwIAAAAHz//+/v/+/w8ATVRyawAAAhQBP/8AAAD/BwMAAAAEC1NhbXBsZS5NRAAAAAAAAAAAAAAAAAAAAP8AAAD/BwQAAQAEAAX/AAD/BwQAAQACAAz/AAD/BwQAAQADAAz/AAD/LwA=');
+
+        function resizeCanvas() {
+            const aspectRatio = canvas.width / canvas.height;
+            if (window.innerWidth < 800) {
+                canvas.width = window.innerWidth - 20;
+                canvas.height = canvas.width / aspectRatio;
+            } else {
+                canvas.width = 800;
+                canvas.height = 400;
+            }
+            playerPaddle = { x: 0, y: canvas.height / 2 - paddleHeight / 2 };
+            computerPaddle = { x: canvas.width - paddleWidth, y: canvas.height / 2 - paddleHeight / 2 };
+            ball = { x: canvas.width / 2, y: canvas.height / 2, vx: initialBallSpeed, vy: initialBallSpeed };
+            render();
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        bestOf3.addEventListener('change', () => {
+            if (bestOf3.checked) {
+                winningScore = 3;
+                document.querySelector('.sub-text').textContent = 'Best of 3 wins';
+            }
+        });
+
+        bestOf5.addEventListener('change', () => {
+            if (bestOf5.checked) {
+                winningScore = 5;
+                document.querySelector('.sub-text').textContent = 'Best of 5 wins';
+            }
+        });
+
+        function drawRect(x, y, width, height, color) {
+            context.fillStyle = color;
+            context.shadowColor = 'rgba(0, 0, 0, 0.5)';
+            context.shadowBlur = 10;
+            context.fillRect(x, y, width, height);
+            context.shadowBlur = 0; // Reset shadow blur
+        }
+
+        function drawBall(x, y, size, color) {
+            context.fillStyle = color;
+            context.beginPath();
+            context.arc(x, y, size, 0, Math.PI * 2);
+            context.shadowColor = 'rgba(0, 0, 0, 0.5)';
+            context.shadowBlur = 10;
+            context.fill();
+            context.shadowBlur = 0; // Reset shadow blur
+        }
+
+        function drawScore() {
+            context.fillStyle = '#fff';
+            context.font = 'bold 20px Arial';
+            context.fillText(`Player: ${playerScore}`, 20, 20);
+            context.fillText(`Computer: ${computerScore}`, canvas.width - 140, 20);
+        }
+
+        function movePlayerPaddle(event) {
+            if (!gamePaused) {
+                let rect = canvas.getBoundingClientRect();
+                let root = document.documentElement;
+                let mouseY = event.clientY - rect.top - root.scrollTop;
+                playerPaddle.y = mouseY - paddleHeight / 2;
+            }
+        }
+
+        function moveComputerPaddle() {
+            if (computerPaddle.y + paddleHeight / 2 < ball.y) {
+                computerPaddle.y += 3;
+            } else {
+                computerPaddle.y -= 3;
+            }
+        }
+
+        function resetBall() {
+            ball.x = canvas.width / 2;
+            ball.y = canvas.height / 2;
+            ball.vx = (Math.random() > 0.5 ? 1 : -1) * initialBallSpeed;
+            ball.vy = (Math.random() > 0.5 ? 1 : -1) * initialBallSpeed;
+        }
+
+        function playPingSound() {
+            pingSound.currentTime = 0;
+            pingSound.play();
+        }
+
+        function checkWin() {
+            if (playerScore >= winningScore) {
+                congratsText.textContent = 'Congrats Player! 🎉';
+                congratsText.style.display = 'block';
+                gamePaused = true;
+                cancelAnimationFrame(animationFrameId);
+            } else if (computerScore >= winningScore) {
+                congratsText.textContent = 'Congrats Computer! 🎉';
+                congratsText.style.display = 'block';
+                gamePaused = true;
+                cancelAnimationFrame(animationFrameId);
+            }
+        }
+
+        function update() {
+            if (!gamePaused) {
+                // Move the ball
+                ball.x += ball.vx;
+                ball.y += ball.vy;
+
+                // Ball collision with top and bottom walls
+                if (ball.y + ballSize > canvas.height || ball.y - ballSize < 0) {
+                    ball.vy = -ball.vy;
+                }
+
+                // Ball collision with paddles
+                if (ball.x - ballSize < playerPaddle.x + paddleWidth && 
+                    ball.y > playerPaddle.y && 
+                    ball.y < playerPaddle.y + paddleHeight) {
+                    ball.vx = -ball.vx * 1.1;
+                    ball.vy *= 1.1;
+                    playPingSound();
+                }
+
+                if (ball.x + ballSize > computerPaddle.x && 
+                    ball.y > computerPaddle.y && 
+                    ball.y < computerPaddle.y + paddleHeight) {
+                    ball.vx = -ball.vx * 1.1;
+                    ball.vy *= 1.1;
+                    playPingSound();
+                }
+
+                // Ball out of bounds
+                if (ball.x + ballSize > canvas.width) {
+                    playerScore++;
+                    resetBall();
+                    checkWin();
+                }
+
+                if (ball.x - ballSize < 0) {
+                    computerScore++;
+                    resetBall();
+                    checkWin();
+                }
+
+                // Move the computer paddle
+                moveComputerPaddle();
+            }
+        }
+
+        function render() {
+            drawRect(0, 0, canvas.width, canvas.height, '#000'); // Clear the canvas
+            drawRect(playerPaddle.x, playerPaddle.y, paddleWidth, paddleHeight, '#fff'); // Player paddle
+            drawRect(computerPaddle.x, computerPaddle.y, paddleWidth, paddleHeight, '#fff'); // Computer paddle
+            if (!gamePaused) {
+                drawBall(ball.x, ball.y, ballSize, '#fff'); // Ball
+            }
+            drawScore(); // Scoreboard
+        }
+
+        function gameLoop() {
+            update();
+            render();
+            if (!gamePaused) {
+                animationFrameId = requestAnimationFrame(gameLoop);
+            }
+        }
+
+        startButton.addEventListener('click', () => {
+            if (gamePaused) {
+                gamePaused = false;
+                welcomeText.style.display = 'none';
+                congratsText.style.display = 'none';
+                playerScore = 0;
+                computerScore = 0;
+                resetBall();
+                gameLoop();
+            }
+        });
+
+        pauseButton.addEventListener('click', () => {
+            gamePaused = true;
+            cancelAnimationFrame(animationFrameId);
+        });
+
+        resetButton.addEventListener('click', () => {
+            gamePaused = true;
+            cancelAnimationFrame(animationFrameId);
+            playerScore = 0;
+            computerScore = 0;
+            welcomeText.style.display = 'block';
+            congratsText.style.display = 'none';
+            render();
+        });
+
+        canvas.addEventListener('mousemove', movePlayerPaddle);
+        render();
+    </script>
+</body>
+</html>
